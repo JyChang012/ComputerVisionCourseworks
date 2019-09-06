@@ -59,7 +59,7 @@ class Perceptron:
             self.error_rate /= self.x.shape[0]
         return self.w
 
-    def plot(self, save_file=False, file_name='Data_with_Separating_Line.eps'):
+    def plot(self, save_file=False, file_name='Data_with_Separating_Line.svg'):
         """Plot the data with separating line."""
         if self.x is None:
             raise RuntimeError('Haven\'t fitted yet!')
@@ -79,7 +79,7 @@ class Perceptron:
             plt.savefig(file_name)
             plt.show()
 
-    def plot_losses(self, save_file=False, file_name='Total_Loss_at_each_Epoch.eps'):
+    def plot_losses(self, save_file=False, file_name='Total_Loss_at_each_Epoch.svg'):
         """Plot losses recorded at each epoch."""
         if self.losses is None:
             raise RuntimeError('Haven\'t fitted yet!')
