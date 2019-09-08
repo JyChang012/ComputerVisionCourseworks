@@ -75,6 +75,7 @@ class NN:
         # Calculate gradients
         dZ2 = self.nodes['O'].copy()
         dZ2[range(dZ2.shape[0]), y] -= 1
+        dZ2 /= y.shape[0]
         self.gradients['W2'] = dZ2.T @ self.nodes['A1']
         self.gradients['b2'] = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
@@ -98,7 +99,7 @@ class NN:
             r[key] = p2 * r[key] + (1 - p2) * (self.gradients[key] ** 2)
             s_hat = s[key] / (1 - p1 ** t)
             r_hat = r[key] / (1 - p2 ** t)
-            delta = -eta * s_hat / (np.sqrt(r_hat) + 1e-7)
+            delta = -eta * s_hat / (np.sqrt(r_hat) + 1e-8)
             self.weights[key] += delta
 
     def loss(self, batch_size=None):
@@ -113,8 +114,8 @@ class NN:
         self.y = y
         # Initialize 1st and 2nd momentum
         class_num = np.max(y) + 1
-        self.weights = dict(W1=np.random.normal(0, 1e-2, [self.width, self.X.shape[1]]),
-                            W2=np.random.normal(0, 1e-2, [class_num, self.width]),
+        self.weights = dict(W1=np.random.normal(0, 1e-7, [self.width, self.X.shape[1]]),
+                            W2=np.random.normal(0, 1e-7, [class_num, self.width]),
                             b1=np.random.normal(0, 0, self.width),
                             b2=np.random.normal(0, 0, class_num))
         self.losses = []
@@ -136,7 +137,7 @@ class NN:
             if optimizer == 'SGD':
                 self.sgd_update(eta)
             elif optimizer == 'Adam':
-                self.adam_update(s, r, t, eta, p1, p2)
+                self.adam_update(s, r, t+1, eta, p1, p2)
 
             j = self.loss(batch_size=batch_size)
             self.losses.append(j)
@@ -174,7 +175,7 @@ class NN:
 def task1():
     X, y = datasets.make_moons(200, noise=0.20)
     cls = NN(reg_lambda=.005, width=16, activation='tanh')
-    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.001, epoch=50)
+    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.1, epoch=5000)
     cls.plot_losses(save_fig=False)
     cls.plot_boundary(save_fig=False)
 
