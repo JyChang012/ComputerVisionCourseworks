@@ -33,15 +33,14 @@ def calculate_err(y, y_hat):
 class NN:
     """A simple 2 layers neural network classifier."""
 
-    def __init__(self, iter_num=10000, eta=.01, reg_lambda=.01, width=8, activation='tanh'):
-        self.iter_num = iter_num
-        self.eta = eta
+    def __init__(self, reg_lambda=.01, width=8, activation='tanh'):
         self.reg_lambda = reg_lambda
         self.width = width
         self.activation = activation
         self.X = None
         self.y = None
         self.weights = dict(W1=None, W2=None, b1=None, b2=None)
+        self.gradients = dict.fromkeys(self.weights)
         self.nodes = dict(Z1=None, A1=None, Z2=None, O=None)
         self.losses = None
         self.error_rate = None
@@ -76,23 +75,31 @@ class NN:
         # Calculate gradients
         dZ2 = self.nodes['O'].copy()
         dZ2[range(dZ2.shape[0]), y] -= 1
-        dW2 = dZ2.T @ self.nodes['A1']
-        db2 = np.sum(dZ2, axis=0)
+        self.gradients['W2'] = dZ2.T @ self.nodes['A1']
+        self.gradients['b2'] = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
         if self.activation == 'relu':
             dZ1 = (dA1 > 0) * 1
         elif self.activation == 'tanh':
             dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
-        dW1 = dZ1.T @ X
-        db1 = np.sum(dZ1, axis=0)
+        self.gradients['W1'] = dZ1.T @ X
+        self.gradients['b1'] = np.sum(dZ1, axis=0)
         # Add regularization term
-        dW1 += self.reg_lambda * self.weights['W1']
-        dW2 += self.reg_lambda * self.weights['W2']
-        # Update weights
-        self.weights['W1'] -= (self.eta * dW1)
-        self.weights['W2'] -= (self.eta * dW2)
-        self.weights['b1'] -= (self.eta * db1)
-        self.weights['b2'] -= (self.eta * db2)
+        self.gradients['W1'] += self.reg_lambda * self.weights['W1']
+        self.gradients['W2'] += self.reg_lambda * self.weights['W2']
+
+    def sgd_update(self, eta=.01):
+        for key in self.weights:
+            self.weights[key] -= (eta * self.gradients[key])
+
+    def adam_update(self, s, r, t=0, eta=.001, p1=0.9, p2=0.999):
+        for key in self.gradients:
+            s[key] = p1 * s[key] + (1 - p1) * self.gradients[key]
+            r[key] = p2 * r[key] + (1 - p2) * (self.gradients[key] ** 2)
+            s_hat = s[key] / (1 - p1 ** t)
+            r_hat = r[key] / (1 - p2 ** t)
+            delta = -eta * s_hat / (np.sqrt(r_hat) + 1e-7)
+            self.weights[key] += delta
 
     def loss(self, batch_size=None):
         if batch_size is not None:
@@ -101,17 +108,24 @@ class NN:
             self.X.shape[0]
         return j
 
-    def fit(self, X, y, verbose=True, batch_size=None):
+    def fit(self, X, y, epoch=10000, eta=.001, optimizer='SGD', verbose=True, batch_size=None, p1=0.9, p2=0.999):
         self.X = X
         self.y = y
+        # Initialize 1st and 2nd momentum
         class_num = np.max(y) + 1
         self.weights = dict(W1=np.random.normal(0, 1e-2, [self.width, self.X.shape[1]]),
                             W2=np.random.normal(0, 1e-2, [class_num, self.width]),
                             b1=np.random.normal(0, 0, self.width),
                             b2=np.random.normal(0, 0, class_num))
         self.losses = []
+        if optimizer == 'Adam':
+            s = dict()
+            r = dict()
+            for key in self.weights:
+                s[key] = np.zeros(self.weights[key].shape)
+                r[key] = s[key].copy()
 
-        for i in range(self.iter_num):
+        for t in range(epoch):
             if batch_size is None:
                 self.forward_pass(self.X)
                 self.backward_pass(self.X, self.y)
@@ -119,10 +133,15 @@ class NN:
                 choices = np.random.choice(self.X.shape[0], size=batch_size)
                 self.forward_pass(self.X[choices, :])
                 self.backward_pass(self.X[choices, :], self.y[choices])
+            if optimizer == 'SGD':
+                self.sgd_update(eta)
+            elif optimizer == 'Adam':
+                self.adam_update(s, r, t, eta, p1, p2)
+
             j = self.loss(batch_size=batch_size)
             self.losses.append(j)
             if verbose is True:
-                print(f'Epoch {i}, loss = {j}')
+                print(f'Epoch {t}, loss = {j}')
 
         y_hat = self.predict(self.X)
         self.error_rate = calculate_err(self.y, y_hat)
@@ -154,8 +173,8 @@ class NN:
 
 def task1():
     X, y = datasets.make_moons(200, noise=0.20)
-    cls = NN(iter_num=3000, eta=.1, reg_lambda=.005, width=16)
-    cls.fit(X, y, verbose=False, batch_size=32)
+    cls = NN(reg_lambda=.005, width=16, activation='tanh')
+    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.001, epoch=50)
     cls.plot_losses(save_fig=False)
     cls.plot_boundary(save_fig=False)
 
