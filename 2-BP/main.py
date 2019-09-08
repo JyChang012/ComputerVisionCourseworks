@@ -6,6 +6,10 @@ logsumexp = special.logsumexp
 softmax = special.softmax
 
 
+def relu(Z):
+    return Z * (Z > 0)
+
+
 def plot_decision_boundary(pred_func, X, y):
     # Set min and max values and give it some padding
     x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
@@ -27,13 +31,14 @@ def calculate_err(y, y_hat):
 
 
 class NN:
-    """A simple 2 layers neural network binary classifer."""
+    """A simple 2 layers neural network classifier."""
 
-    def __init__(self, iter_num=10000, eta=.01, reg_lambda=.01, width=8):
+    def __init__(self, iter_num=10000, eta=.01, reg_lambda=.01, width=8, activation='tanh'):
         self.iter_num = iter_num
         self.eta = eta
         self.reg_lambda = reg_lambda
         self.width = width
+        self.activation = activation
         self.X = None
         self.y = None
         self.weights = dict(W1=None, W2=None, b1=None, b2=None)
@@ -43,7 +48,12 @@ class NN:
 
     def forward_pass(self, X):
         self.nodes['Z1'] = X @ self.weights['W1'].T + self.weights['b1']
-        self.nodes['A1'] = np.tanh(self.nodes['Z1'])
+        if self.activation == 'tanh':
+            self.nodes['A1'] = np.tanh(self.nodes['Z1'])
+        elif self.activation == 'relu':
+            self.nodes['A1'] = relu(self.nodes['Z1'])
+        else:
+            raise ValueError('Unsupported')
         self.nodes['Z2'] = self.nodes['A1'] @ self.weights['W2'].T + self.weights['b2']
         # exp = np.exp(self.nodes['Z2'])
         # self.nodes['O'] = exp / np.sum(exp, axis=1, keepdims=True)
@@ -69,7 +79,10 @@ class NN:
         dW2 = dZ2.T @ self.nodes['A1']
         db2 = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
-        dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
+        if self.activation == 'relu':
+            dZ1 = (dA1 > 0) * 1
+        elif self.activation == 'tanh':
+            dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
         dW1 = dZ1.T @ self.X
         db1 = np.sum(dZ1, axis=0)
         # Add regularization term
@@ -89,9 +102,10 @@ class NN:
         self.X = X
         self.y = y
         class_num = np.max(y) + 1
-        self.weights = dict(W1=np.random.normal(0, 1e-3, [self.width, self.X.shape[1]]),
-                            W2=np.random.normal(0, 1e-3, [class_num, self.width]), b1=np.zeros(self.width),
-                            b2=np.zeros(class_num))
+        self.weights = dict(W1=np.random.normal(0, 50, [self.width, self.X.shape[1]]),
+                            W2=np.random.normal(8, 4, [class_num, self.width]),
+                            b1=np.random.normal(0, 1e-3, self.width),
+                            b2=np.random.normal(50, 20, class_num))
         self.losses = []
 
         for i in range(self.iter_num):

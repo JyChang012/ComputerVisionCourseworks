@@ -28,7 +28,7 @@ def newsgroup_data_generation():
 
 def test():
     X_train, y_train, X_test, y_test = newsgroup_data_generation()
-    cls = NN(iter_num=14000, eta=.0003, reg_lambda=3, width=16)
+    cls = NN(iter_num=5000, eta=.00003, reg_lambda=2, width=40, activation='tanh')
     cls.fit(X_train, y_train, verbose=False)
     cls.plot_losses(save_fig=False)
     cls.score(X_test, y_test)
