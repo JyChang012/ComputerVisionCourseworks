@@ -71,11 +71,11 @@ class NN:
         print(f'err = {err}')
         return err
 
-    def backward_pass(self):
+    def backward_pass(self, X, y):
 
         # Calculate gradients
         dZ2 = self.nodes['O'].copy()
-        dZ2[range(dZ2.shape[0]), self.y] -= 1
+        dZ2[range(dZ2.shape[0]), y] -= 1
         dW2 = dZ2.T @ self.nodes['A1']
         db2 = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
@@ -83,7 +83,7 @@ class NN:
             dZ1 = (dA1 > 0) * 1
         elif self.activation == 'tanh':
             dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
-        dW1 = dZ1.T @ self.X
+        dW1 = dZ1.T @ X
         db1 = np.sum(dZ1, axis=0)
         # Add regularization term
         dW1 += self.reg_lambda * self.weights['W1']
@@ -94,27 +94,35 @@ class NN:
         self.weights['b1'] -= (self.eta * db1)
         self.weights['b2'] -= (self.eta * db2)
 
-    def loss(self):
-        j = np.sum(logsumexp(self.nodes['Z2'], axis=1) - self.nodes['Z2'][range(self.X.shape[0]), self.y], axis=0) / self.X.shape[0]
+    def loss(self, batch_size=None):
+        if batch_size is not None:
+            self.forward_pass(self.X)
+        j = np.sum(logsumexp(self.nodes['Z2'], axis=1) - self.nodes['Z2'][range(self.X.shape[0]), self.y], axis=0) / \
+            self.X.shape[0]
         return j
 
-    def fit(self, X, y, verbose=True):
+    def fit(self, X, y, verbose=True, batch_size=None):
         self.X = X
         self.y = y
         class_num = np.max(y) + 1
-        self.weights = dict(W1=np.random.normal(0, 50, [self.width, self.X.shape[1]]),
-                            W2=np.random.normal(8, 4, [class_num, self.width]),
-                            b1=np.random.normal(0, 1e-3, self.width),
-                            b2=np.random.normal(50, 20, class_num))
+        self.weights = dict(W1=np.random.normal(0, 1e-2, [self.width, self.X.shape[1]]),
+                            W2=np.random.normal(0, 1e-2, [class_num, self.width]),
+                            b1=np.random.normal(0, 0, self.width),
+                            b2=np.random.normal(0, 0, class_num))
         self.losses = []
 
         for i in range(self.iter_num):
-            self.forward_pass(self.X)
-            j = self.loss()
+            if batch_size is None:
+                self.forward_pass(self.X)
+                self.backward_pass(self.X, self.y)
+            else:
+                choices = np.random.choice(self.X.shape[0], size=batch_size)
+                self.forward_pass(self.X[choices, :])
+                self.backward_pass(self.X[choices, :], self.y[choices])
+            j = self.loss(batch_size=batch_size)
             self.losses.append(j)
             if verbose is True:
                 print(f'Epoch {i}, loss = {j}')
-            self.backward_pass()
 
         y_hat = self.predict(self.X)
         self.error_rate = calculate_err(self.y, y_hat)
@@ -146,8 +154,8 @@ class NN:
 
 def task1():
     X, y = datasets.make_moons(200, noise=0.20)
-    cls = NN(iter_num=10000, eta=.01, reg_lambda=.005, width=16)
-    cls.fit(X, y, verbose=False)
+    cls = NN(iter_num=3000, eta=.1, reg_lambda=.005, width=16)
+    cls.fit(X, y, verbose=False, batch_size=32)
     cls.plot_losses(save_fig=False)
     cls.plot_boundary(save_fig=False)
 
