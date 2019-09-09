@@ -34,6 +34,7 @@ class NN:
     """A simple 2 layers neural network classifier."""
 
     def __init__(self, reg_lambda=.01, width=[8, 8], activation=['tanh', 'tanh']):
+
         self.reg_lambda = reg_lambda
         self.width = width
         self.activation = activation
@@ -46,6 +47,7 @@ class NN:
         self.error_rate = None
 
     def forward_pass(self, X):
+
         self.nodes['Z1'] = X @ self.weights['W1'].T + self.weights['b1']  # Has this executed?
         if self.activation[0] == 'tanh':
             self.nodes['A1'] = np.tanh(self.nodes['Z1'])
@@ -192,7 +194,7 @@ class NN:
 def task1():
     X, y = datasets.make_moons(200, noise=0.20)
     cls = NN(reg_lambda=.005, width=[16, 8], activation=['tanh', 'tanh'])
-    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.06, epoch=5000)
+    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.06, epoch=20000)
     cls.plot_losses(save_fig=True)
     cls.plot_boundary(save_fig=True)
 
