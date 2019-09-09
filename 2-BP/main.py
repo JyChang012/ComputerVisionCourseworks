@@ -33,31 +33,36 @@ def calculate_err(y, y_hat):
 class NN:
     """A simple 2 layers neural network classifier."""
 
-    def __init__(self, reg_lambda=.01, width=8, activation='tanh'):
+    def __init__(self, reg_lambda=.01, width=[8, 8], activation=['tanh', 'tanh']):
         self.reg_lambda = reg_lambda
         self.width = width
         self.activation = activation
         self.X = None
         self.y = None
-        self.weights = dict(W1=None, W2=None, b1=None, b2=None)
+        self.weights = dict(W1=None, W2=None, W3=None, b1=None, b2=None, b3=None)
         self.gradients = dict.fromkeys(self.weights)
-        self.nodes = dict(Z1=None, A1=None, Z2=None, O=None)
+        self.nodes = dict()
         self.losses = None
         self.error_rate = None
 
     def forward_pass(self, X):
-        self.nodes['Z1'] = X @ self.weights['W1'].T + self.weights['b1']
-        if self.activation == 'tanh':
+        self.nodes['Z1'] = X @ self.weights['W1'].T + self.weights['b1']  # Has this executed?
+        if self.activation[0] == 'tanh':
             self.nodes['A1'] = np.tanh(self.nodes['Z1'])
-        elif self.activation == 'relu':
+        elif self.activation[0] == 'relu':
             self.nodes['A1'] = relu(self.nodes['Z1'])
         else:
             raise ValueError('Unsupported')
         self.nodes['Z2'] = self.nodes['A1'] @ self.weights['W2'].T + self.weights['b2']
+        if self.activation[1] == 'tanh':
+            self.nodes['A2'] = np.tanh(self.nodes['Z2'])
+        elif self.activation[1] == 'relu':
+            self.nodes['A2'] = relu(self.nodes['Z2'])
+        self.nodes['Z3'] = self.nodes['A2'] @ self.weights['W3'].T + self.weights['b3']
         # exp = np.exp(self.nodes['Z2'])
         # self.nodes['O'] = exp / np.sum(exp, axis=1, keepdims=True)
         # self.nodes['O'] = np.exp(self.nodes['Z2'] - logsumexp(self.nodes['Z2'], axis=1, keepdims=True))
-        self.nodes['O'] = softmax(self.nodes['Z2'], axis=1)
+        self.nodes['O'] = softmax(self.nodes['Z3'], axis=1)
 
     def predict(self, X):
         self.forward_pass(X)
@@ -73,21 +78,29 @@ class NN:
     def backward_pass(self, X, y):
 
         # Calculate gradients
-        dZ2 = self.nodes['O'].copy()
-        dZ2[range(dZ2.shape[0]), y] -= 1
-        dZ2 /= y.shape[0]
+        dZ3 = self.nodes['O'].copy()
+        dZ3[list(range(dZ3.shape[0])), y] -= 1
+        dZ3 /= y.shape[0]
+        self.gradients['W3'] = dZ3.T @ self.nodes['A2']
+        self.gradients['b3'] = np.sum(dZ3, axis=0)
+        dA2 = dZ3 @ self.weights['W3']
+        if self.activation[0] == 'relu':
+            dZ2 = (dA2 > 0) * 1
+        elif self.activation[0] == 'tanh':
+            dZ2 = dA2 * (1 - self.nodes['A2'] ** 2)
         self.gradients['W2'] = dZ2.T @ self.nodes['A1']
         self.gradients['b2'] = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
-        if self.activation == 'relu':
+        if self.activation[1] == 'relu':
             dZ1 = (dA1 > 0) * 1
-        elif self.activation == 'tanh':
+        elif self.activation[1] == 'tanh':
             dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
         self.gradients['W1'] = dZ1.T @ X
         self.gradients['b1'] = np.sum(dZ1, axis=0)
         # Add regularization term
-        self.gradients['W1'] += self.reg_lambda * self.weights['W1']
-        self.gradients['W2'] += self.reg_lambda * self.weights['W2']
+        for key in self.gradients.keys():
+            if key[0] == 'W':
+                self.gradients[key] += self.reg_lambda * self.weights[key]
 
     def sgd_update(self, eta=.01):
         for key in self.weights:
@@ -105,7 +118,7 @@ class NN:
     def loss(self, batch_size=None):
         if batch_size is not None:
             self.forward_pass(self.X)
-        j = np.sum(logsumexp(self.nodes['Z2'], axis=1) - self.nodes['Z2'][range(self.X.shape[0]), self.y], axis=0) / \
+        j = np.sum(logsumexp(self.nodes['Z3'], axis=1) - self.nodes['Z3'][range(self.X.shape[0]), self.y], axis=0) / \
             self.X.shape[0]
         return j
 
@@ -114,10 +127,12 @@ class NN:
         self.y = y
         # Initialize 1st and 2nd momentum
         class_num = np.max(y) + 1
-        self.weights = dict(W1=np.random.normal(0, 1e-7, [self.width, self.X.shape[1]]),
-                            W2=np.random.normal(0, 1e-7, [class_num, self.width]),
-                            b1=np.random.normal(0, 0, self.width),
-                            b2=np.random.normal(0, 0, class_num))
+        self.weights = dict(W1=np.random.normal(0, 1e-7, [self.width[0], self.X.shape[1]]),
+                            W2=np.random.normal(0, 1e-7, [self.width[1], self.width[0]]),
+                            W3=np.random.normal(0, 1e-7, [class_num, self.width[1]]),
+                            b1=np.random.normal(0, 0, self.width[0]),
+                            b2=np.random.normal(0, 0, self.width[1]),
+                            b3=np.random.normal(0, 0, class_num))
         self.losses = []
         if optimizer == 'Adam':
             s = dict()
@@ -128,12 +143,14 @@ class NN:
 
         for t in range(epoch):
             if batch_size is None:
-                self.forward_pass(self.X)
-                self.backward_pass(self.X, self.y)
+                self.forward_pass(X)
+                self.backward_pass(X, y)
             else:
-                choices = np.random.choice(self.X.shape[0], size=batch_size)
-                self.forward_pass(self.X[choices, :])
-                self.backward_pass(self.X[choices, :], self.y[choices])
+                choices = np.random.choice(self.X.shape[0], size=batch_size, replace=True)
+                choices_x = X[choices, :]
+                choices_y = y[choices]
+                self.forward_pass(X=choices_x)
+                self.backward_pass(X=choices_x, y=choices_y)
             if optimizer == 'SGD':
                 self.sgd_update(eta)
             elif optimizer == 'Adam':
@@ -148,7 +165,7 @@ class NN:
         self.error_rate = calculate_err(self.y, y_hat)
         print(f'err = {self.error_rate}')
 
-    def plot_boundary(self, save_fig=False, file_name='Data with Decision Boundary.svg'):
+    def plot_boundary(self, save_fig=False, file_name='Data_with_Decision_Boundary.svg'):
         if self.X is None:
             raise RuntimeError('Have not fitted yet!')
         elif self.X.shape[1] != 2:
@@ -162,7 +179,7 @@ class NN:
                 plt.savefig(file_name)
             plt.show()
 
-    def plot_losses(self, save_fig=False, file_name='Loss at Each Epoch.svg'):
+    def plot_losses(self, save_fig=False, file_name='Loss_at_Each_Epoch.svg'):
         plt.plot(self.losses)
         plt.title(f'Loss at Each Epoch: err = {self.error_rate}')
         plt.xlabel('Epoch')
@@ -174,10 +191,10 @@ class NN:
 
 def task1():
     X, y = datasets.make_moons(200, noise=0.20)
-    cls = NN(reg_lambda=.005, width=16, activation='tanh')
-    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.1, epoch=5000)
-    cls.plot_losses(save_fig=False)
-    cls.plot_boundary(save_fig=False)
+    cls = NN(reg_lambda=.005, width=[16, 8], activation=['tanh', 'tanh'])
+    cls.fit(X, y, verbose=False, batch_size=32, optimizer='Adam', eta=.06, epoch=5000)
+    cls.plot_losses(save_fig=True)
+    cls.plot_boundary(save_fig=True)
 
 
 if __name__ == '__main__':
