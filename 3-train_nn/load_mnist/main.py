@@ -41,30 +41,87 @@ class NN:
         self.X = None
         self.y = None
         self.weights = dict(W1=None, W2=None, W3=None, b1=None, b2=None, b3=None)
-        self.gradients = dict.fromkeys(self.weights)
+        self.weight_gradients = dict.fromkeys(self.weights)
         self.nodes = dict()
+        self.node_gradients = dict()
         self.losses = None
         self.error_rate = None
+        self.batch_normalization = None
+
+    def op_activation(self, Y, X, activation='tanh', grad=False):
+        if activation == 'tanh':
+            self.op_tanh(Y, X, grad)
+        elif activation == 'relu' or 'ReLU':
+            self.op_relu(Y, X, grad)
+        else:
+            raise ValueError('Unsupported')
+
+    def op_tanh(self, A, Z, grad=False):
+        if grad is False:
+            self.nodes[A] = np.tanh(self.nodes[Z])
+        else:
+            self.node_gradients[Z] = self.node_gradients[A] * (1 - self.nodes[A] ** 2)
+
+    def op_relu(self, A, Z, grad=False):
+        if grad is False:
+            self.nodes[A] = relu(self.nodes[Z])
+        else:
+            self.node_gradients[Z] = (self.node_gradients[A] > 0) * 1
+
+    def op_fully_connect(self, H, W, A, b=0, grad=False):
+        if grad is False:
+            if type(A) is str:
+                A = self.nodes[A]
+            if b != 0:
+                b = self.weights[b]
+            self.nodes[H] = A @ self.weights[W].T + b  # Has this executed?
+        elif grad == W:
+            self.weight_gradients[W] = self.node_gradients[A].T @ self.nodes[H]
+        elif grad == A:
+            self.node_gradients[A] = self.node_gradients[H] @ self.weights[W]
+        elif grad == b and grad is not False:
+            self.weight_gradients[b] = np.sum(self.node_gradients[H], axis=0)
+
+    def op_batch_normalization(self, Z, H, gamma, beta, grad=False):
+        if grad is False:
+            mean = np.average(self.nodes[H], axis=0)
+            std = np.std(self.nodes[H], axis=0)
+            self.nodes[Z] = self.weights[gamma] * (self.nodes[H] - mean) / (std + 1e-8) + self.weights[beta]
+        elif grad == gamma:
+            self.weight_gradients[gamma]  # TODO: bp of bn ?
+
+    def op_softmax(self, O, Z, grad=False, y=None):
+        if grad is False:
+            self.nodes[O] = softmax(self.nodes[Z], axis=1)
+        else:
+            dX = self.nodes[O].copy()
+            dX[list(range(dX.shape[0])), y] -= 1
+            dX /= y.shape[0]
+            self.node_gradients[Z] = dX
 
     def forward_pass(self, X):
 
-        self.nodes['Z1'] = X @ self.weights['W1'].T + self.weights['b1']  # Has this executed?
-        if self.activation[0] == 'tanh':
-            self.nodes['A1'] = np.tanh(self.nodes['Z1'])
-        elif self.activation[0] == 'relu':
-            self.nodes['A1'] = relu(self.nodes['Z1'])
+        if self.batch_normalization is False:
+            self.op_fully_connect('Z1', 'W1', X, 'b1')
         else:
-            raise ValueError('Unsupported')
-        self.nodes['Z2'] = self.nodes['A1'] @ self.weights['W2'].T + self.weights['b2']
-        if self.activation[1] == 'tanh':
-            self.nodes['A2'] = np.tanh(self.nodes['Z2'])
-        elif self.activation[1] == 'relu':
-            self.nodes['A2'] = relu(self.nodes['Z2'])
-        self.nodes['Z3'] = self.nodes['A2'] @ self.weights['W3'].T + self.weights['b3']
+            self.op_fully_connect('H1', 'W1', X)
+            self.op_batch_normalization('Z1', 'H1', 'gamma1', 'b1')
+
+        self.op_activation('A1', 'Z1', self.activation[0])
+
+        if self.batch_normalization is False:
+            self.op_fully_connect('Z2', 'W2', 'A1', 'b2')
+        else:
+            self.op_fully_connect('H2', 'W2', 'A1')
+            self.op_batch_normalization('Z2', 'H2', 'gamma2', 'b2')
+
+        self.op_activation('A2', 'Z2', self.activation[1])
+
+        self.op_fully_connect('Z3', 'W3', 'A2', 'b3')
         # exp = np.exp(self.nodes['Z2'])
         # self.nodes['O'] = exp / np.sum(exp, axis=1, keepdims=True)
         # self.nodes['O'] = np.exp(self.nodes['Z2'] - logsumexp(self.nodes['Z2'], axis=1, keepdims=True))
-        self.nodes['O'] = softmax(self.nodes['Z3'], axis=1)
+        self.op_softmax('O', 'Z3')
 
     def predict(self, X):
         self.forward_pass(X)
@@ -79,39 +136,40 @@ class NN:
 
     def backward_pass(self, X, y):
 
-        # Calculate gradients
-        dZ3 = self.nodes['O'].copy()
-        dZ3[list(range(dZ3.shape[0])), y] -= 1
-        dZ3 /= y.shape[0]
-        self.gradients['W3'] = dZ3.T @ self.nodes['A2']
-        self.gradients['b3'] = np.sum(dZ3, axis=0)
-        dA2 = dZ3 @ self.weights['W3']
-        if self.activation[0] == 'relu':
-            dZ2 = (dA2 > 0) * 1
-        elif self.activation[0] == 'tanh':
-            dZ2 = dA2 * (1 - self.nodes['A2'] ** 2)
-        self.gradients['W2'] = dZ2.T @ self.nodes['A1']
-        self.gradients['b2'] = np.sum(dZ2, axis=0)
+        # Calculate weight_gradients
+        self.op_softmax('O', 'Z3', grad=True, y=y)
+        self.op_fully_connect('Z3', 'W3', 'A2', grad='W3')
+        self.op_fully_connect('Z3', 'W3', 'A2', grad='b3')
+        self.op_fully_connect('Z3', 'W3', 'A2', grad='A2')
+
+        if self.batch_normalization is False:
+            self.op_activation('A2', 'Z2', activation=self.activation[1], grad='Z2')
+        else:
+            self.op_activation('A2', 'H2', activation=self.activation[1], grad='H2')
+
+            # TODO: Finish bp of batch normalization
+
+        self.weight_gradients['b2'] = np.sum(dZ2, axis=0)
         dA1 = dZ2 @ self.weights['W2']
         if self.activation[1] == 'relu':
             dZ1 = (dA1 > 0) * 1
         elif self.activation[1] == 'tanh':
             dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
-        self.gradients['W1'] = dZ1.T @ X
-        self.gradients['b1'] = np.sum(dZ1, axis=0)
+        self.weight_gradients['W1'] = dZ1.T @ X
+        self.weight_gradients['b1'] = np.sum(dZ1, axis=0)
         # Add regularization term
-        for key in self.gradients.keys():
+        for key in self.weight_gradients.keys():
             if key[0] == 'W':
-                self.gradients[key] += self.reg_lambda * self.weights[key]
+                self.weight_gradients[key] += self.reg_lambda * self.weights[key]
 
     def sgd_update(self, eta=.01):
         for key in self.weights:
-            self.weights[key] -= (eta * self.gradients[key])
+            self.weights[key] -= (eta * self.weight_gradients[key])
 
     def adam_update(self, s, r, t=0, eta=.001, p1=0.9, p2=0.999):
-        for key in self.gradients:
-            s[key] = p1 * s[key] + (1 - p1) * self.gradients[key]
-            r[key] = p2 * r[key] + (1 - p2) * (self.gradients[key] ** 2)
+        for key in self.weight_gradients:
+            s[key] = p1 * s[key] + (1 - p1) * self.weight_gradients[key]
+            r[key] = p2 * r[key] + (1 - p2) * (self.weight_gradients[key] ** 2)
             s_hat = s[key] / (1 - p1 ** t)
             r_hat = r[key] / (1 - p2 ** t)
             delta = -eta * s_hat / (np.sqrt(r_hat) + 1e-8)
@@ -124,12 +182,13 @@ class NN:
             self.X.shape[0]
         return j
 
-    def fit(self, X, y, epoch=10000, eta=.001, optimizer='SGD', verbose=True, batch_size=None, p1=0.9, p2=0.999):
+    def fit(self, X, y, epoch=10000, eta=.001, optimizer='SGD', verbose=True, batch_size=None, p1=0.9, p2=0.999,
+            batch_normalization=False):
         self.X = X
         self.y = y
         # Initialize 1st and 2nd momentum
         class_num = np.max(y) + 1
-        # self.weights = dict(W1=np.random.normal(0, 1e-7, [self.width[0], self.X.shape[1]]),
+        # self.weights = dict(W1=np.random.normal(0, 1e-7, [self.width[0], self.Z.shape[1]]),
         #                     W2=np.random.normal(0, 1e-7, [self.width[1], self.width[0]]),
         #                     W3=np.random.normal(0, 1e-7, [class_num, self.width[1]]),
         #                     b1=np.random.normal(0, 1e-3, self.width[0]),
@@ -150,6 +209,11 @@ class NN:
             for key in self.weights:
                 s[key] = np.zeros(self.weights[key].shape)
                 r[key] = s[key].copy()
+
+        self.batch_normalization = batch_normalization
+        if batch_normalization is True:
+            self.weights['gamma1'] = np.random.normal(1, 1e-2, self.width[0])
+            self.weights['gamma2'] = np.random.normal(1, 1e-2, self.width[1])
 
         for t in range(epoch):
             if batch_size is None:

@@ -79,7 +79,7 @@ class NN:
 
     def backward_pass(self, X, y):
 
-        # Calculate gradients
+        # Calculate weight_gradients
         dZ3 = self.nodes['O'].copy()
         dZ3[list(range(dZ3.shape[0])), y] -= 1
         dZ3 /= y.shape[0]
