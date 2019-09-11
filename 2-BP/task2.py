@@ -14,7 +14,7 @@ def newsgroup_data_generation():
     num_test = len(newsgroups_test.data)
 
     # max_features is an important parameter. You should adjust it.
-    vectorizer = TfidfVectorizer(max_features=40)
+    vectorizer = TfidfVectorizer(max_features=3000)
 
     X = vectorizer.fit_transform(newsgroups_train.data + newsgroups_test.data)
     X_train = X[0:num_train, :]
@@ -28,9 +28,9 @@ def newsgroup_data_generation():
 
 def test():
     X_train, y_train, X_test, y_test = newsgroup_data_generation()
-    cls = NN(reg_lambda=.002, width=[12, 6], activation=['relu', 'relu'])
-    cls.fit(X_train.toarray(), y_train, verbose=False, batch_size=16, epoch=30000, eta=4e-3, optimizer='Adam')
-    cls.plot_losses(save_fig=True, file_name='relu.svg')
+    cls = NN(reg_lambda=.002, width=[1000, 500], activation=['relu', 'relu'])
+    cls.fit(X_train.toarray(), y_train, verbose=False, batch_size=32, epoch=5000, eta=1e-2, optimizer='Adam')
+    cls.plot_losses(save_fig=False, file_name='relu.svg')
     cls.score(X_test.toarray(), y_test)
 
 
