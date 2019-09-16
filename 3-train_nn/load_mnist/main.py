@@ -48,11 +48,11 @@ class NN:
         self.error_rate = None
         self.batch_normalization = None
 
-    def op_activation(self, Y, X, activation='tanh', grad=False):
+    def op_activation(self, A, Z, activation='tanh', grad=False):
         if activation == 'tanh':
-            self.op_tanh(Y, X, grad)
+            self.op_tanh(A, Z, grad)
         elif activation == 'relu' or 'ReLU':
-            self.op_relu(Y, X, grad)
+            self.op_relu(A, Z, grad)
         else:
             raise ValueError('Unsupported')
 
@@ -69,14 +69,14 @@ class NN:
             self.node_gradients[Z] = (self.node_gradients[A] > 0) * 1
 
     def op_fully_connect(self, H, W, A, b=0, grad=False):
+        if type(A) is str:
+            A = self.nodes[A]
+        if b != 0:
+            b = self.weights[b]
         if grad is False:
-            if type(A) is str:
-                A = self.nodes[A]
-            if b != 0:
-                b = self.weights[b]
             self.nodes[H] = A @ self.weights[W].T + b  # Has this executed?
         elif grad == W:
-            self.weight_gradients[W] = self.node_gradients[A].T @ self.nodes[H]
+            self.weight_gradients[W] = self.node_gradients[H].T @ A
         elif grad == A:
             self.node_gradients[A] = self.node_gradients[H] @ self.weights[W]
         elif grad == b and grad is not False:
@@ -84,11 +84,21 @@ class NN:
 
     def op_batch_normalization(self, Z, H, gamma, beta, grad=False):
         if grad is False:
-            mean = np.average(self.nodes[H], axis=0)
-            std = np.std(self.nodes[H], axis=0)
-            self.nodes[Z] = self.weights[gamma] * (self.nodes[H] - mean) / (std + 1e-8) + self.weights[beta]
+            self.nodes[f'mean_{H}'] = np.average(self.nodes[H], axis=0)
+            self.nodes[f'var_{H}'] = np.var(self.nodes[H], axis=0)
+            self.nodes[f'{H}_hat'] = (self.nodes[H] - self.nodes[f'mean_{H}']) / np.sqrt(self.nodes[f'var_{H}'] + 1e-8)
+            self.nodes[Z] = self.weights[gamma] * self.nodes[f'{H}_hat'] + self.weights[beta]
         elif grad == gamma:
-            self.weight_gradients[gamma]  # TODO: bp of bn ?
+            self.node_gradients[f'{H}_hat'] = self.node_gradients[Z] @ self.weights[gamma]
+            self.weight_gradients[gamma] = np.sum(self.nodes[f'{H}_hat'] * self.node_gradients[Z], axis=0)
+            self.weight_gradients[beta] = np.sum(self.node_gradients[Z], axis=0)
+            self.node_gradients[f'var_{H}'] = -.5 * self.nodes[gamma] * ((self.nodes[f'var_{H}'] + 1e-8) ** (-1.5)) *\
+                np.sum(self.node_gradients[Z] * (self.nodes[H] - self.nodes[f'mean_{H}']), axis=0)
+            self.node_gradients[f'mean_{H}'] = -self.nodes[f'mean_{H}'] / np.sqrt(self.nodes[f'var_{H}'] + 1e-8) *\
+                np.sum(self.node_gradients[f'{H}_hat'], axis=0)
+            self.node_gradients[H] = 1 / np.sqrt(self.nodes[f'var_{H}'] + 1e-8) * self.node_gradients[f'{H}_hat'] +\
+                2 / self.nodes[H].shape[0] * (self.nodes[H] - self.nodes[f'mean_{H}']) * self.node_gradients[f'var_{H}']\
+                + 1 / self.nodes[H].shape[0] * self.node_gradients[f'mean_{H}']
 
     def op_softmax(self, O, Z, grad=False, y=None):
         if grad is False:
@@ -141,22 +151,28 @@ class NN:
         self.op_fully_connect('Z3', 'W3', 'A2', grad='W3')
         self.op_fully_connect('Z3', 'W3', 'A2', grad='b3')
         self.op_fully_connect('Z3', 'W3', 'A2', grad='A2')
+        self.op_activation('A2', 'Z2', activation=self.activation[1], grad='Z2')
 
         if self.batch_normalization is False:
-            self.op_activation('A2', 'Z2', activation=self.activation[1], grad='Z2')
+            self.op_fully_connect('Z2', 'W2', 'A1', 'b2', grad='W2')
+            self.op_fully_connect('Z2', 'W2', 'A1', 'b2', grad='b2')
+            self.op_fully_connect('Z2', 'W2', 'A1', 'b2', grad='A1')
         else:
-            self.op_activation('A2', 'H2', activation=self.activation[1], grad='H2')
+            self.op_batch_normalization('Z2', 'H2', 'gamma2', 'b2')
+            self.op_fully_connect('H2', 'W2', 'A1', grad='W2')
+            self.op_fully_connect('H2', 'W2', 'A1', grad='b2')
+            self.op_fully_connect('H2', 'W2', 'A1', grad='A1')
 
-            # TODO: Finish bp of batch normalization
+        self.op_activation('A1', 'Z1', activation=self.activation[0], grad='Z1')
 
-        self.weight_gradients['b2'] = np.sum(dZ2, axis=0)
-        dA1 = dZ2 @ self.weights['W2']
-        if self.activation[1] == 'relu':
-            dZ1 = (dA1 > 0) * 1
-        elif self.activation[1] == 'tanh':
-            dZ1 = dA1 * (1 - self.nodes['A1'] ** 2)
-        self.weight_gradients['W1'] = dZ1.T @ X
-        self.weight_gradients['b1'] = np.sum(dZ1, axis=0)
+        if self.batch_normalization is False:
+            self.op_fully_connect('Z1', 'W1', X, 'b1', grad='W1')
+            self.op_fully_connect('Z1', 'W1', X, 'b1', grad='b1')
+        else:
+            self.op_batch_normalization('Z1', 'H1', 'gamma1', 'b1')
+            self.op_fully_connect('H1', 'W1', X, grad='W1')
+            self.op_fully_connect('H1', 'W1', X, grad='b1')
+
         # Add regularization term
         for key in self.weight_gradients.keys():
             if key[0] == 'W':
