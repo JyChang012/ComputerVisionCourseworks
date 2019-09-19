@@ -4,9 +4,21 @@ import scipy.stats
 import cv2 as cv
 
 
+def plot_cv_image(img):
+    if len(img.shape) > 2:
+        plt.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+    else:
+        plt.imshow(img, cmap='gray')
+    plt.xticks([]), plt.yticks([])
+
+
 def bilateral_filter(src=np.array([]), kernel_size=(3, 3), sigma_color=1., sigma_space=1.):
 
+    if kernel_size[0] % 2 == 0 or kernel_size[1] % 2 == 0:
+        raise ValueError('Only support odd kernel!')
+
     src = src.astype(np.float64)
+    src = np.atleast_3d(src)
 
     # Construct space kernel
     space_kernel = np.zeros(kernel_size)
@@ -17,9 +29,7 @@ def bilateral_filter(src=np.array([]), kernel_size=(3, 3), sigma_color=1., sigma
             space_kernel[i, j] = np.linalg.norm(np.array([i, j]) - center)
     space_kernel = scipy.stats.norm.pdf(space_kernel, loc=0, scale=sigma_space)
     space_kernel = space_kernel / space_kernel.sum()
-
-    if len(src.shape) > 2:
-        space_kernel = space_kernel[..., np.newaxis]
+    space_kernel = space_kernel[..., np.newaxis]
 
     border_vertical = int((kernel_size[0] - 1) / 2)
     border_horizontal = int((kernel_size[1] - 1) / 2)
@@ -34,12 +44,7 @@ def bilateral_filter(src=np.array([]), kernel_size=(3, 3), sigma_color=1., sigma
             roi = src_with_border[i:i + kernel_size[0], j:j + kernel_size[1]]
 
             color_kernel = roi - src[i, j]
-
-            if len(src.shape) > 2:
-                color_kernel = np.linalg.norm(color_kernel, axis=2, keepdims=True)
-            else:
-                color_kernel = np.abs(color_kernel)
-
+            color_kernel = np.linalg.norm(color_kernel, axis=2, keepdims=True)
             color_kernel = scipy.stats.norm.pdf(color_kernel, loc=0, scale=sigma_color)
             color_kernel = color_kernel / color_kernel.sum()
 
@@ -68,7 +73,7 @@ def test_gray():
     plt.show()
 
 
-def test_flower_api():
+def test_flower_opencv():
     img = cv.imread('flower.jpg')
     dst = cv.bilateralFilter(img, 9, 75, 75)
     plt.imshow(cv.cvtColor(dst, cv.COLOR_BGR2RGB))
@@ -79,10 +84,19 @@ def test_flower_api():
 def test_flower():
     img = cv.imread('flower.jpg')
     dst = bilateral_filter(img, (9, 9), 75, 75)
-    plt.imshow(cv.cvtColor(dst, cv.COLOR_BGR2RGB))
-    plt.xticks([]), plt.yticks([])
+
+    plot_cv_image(dst)
+    plt.savefig('flower_bilateral.jpg')
+    plt.show()
+
+
+def test_guided():
+    img = cv.imread('flower.jpg')
+    dst = cv.ximgproc.guidedFilter(img, img, 4, 2601)
+    plot_cv_image(dst)
+    plt.savefig('flower_guided.jpg')
     plt.show()
 
 
 if __name__ == '__main__':
-    test_flower()
+    test_guided()
