@@ -6,10 +6,12 @@ import matplotlib.pyplot as plt
 import os.path
 from vis import voc_label_indices, build_colormap2label, batch_label_indices
 from tensorflow.keras.layers import Conv2D, UpSampling2D, MaxPool2D, Add, Activation
+import sys
 import glob
 from PIL import Image
+# from predict import get_x, get_y
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 keras = tf.keras
 VGG16 = keras.applications.vgg16.VGG16
@@ -32,12 +34,38 @@ x_dir = './fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/img/'
 y_dir = './fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/SegmentationClass/'
 
 
-def voc_seg_metrics(y_true, y_predict):
-    shape = tf.shape(y_true)
-    num_of_pix = shape[0] * shape[1]
-    y_predict = tf.argmax(y_predict, axis=-1, output_type=tf.int32)
-    rst = (y_predict == y_true)
-    return np.sum(rst) / num_of_pix
+def voc_seg_acc(y_true, y_pred):  # Note y_true and y_pred always have the same shape, and x and y are automatically converted to the same ndim
+    y_pred = K.argmax(y_pred, axis=-1)[..., tf.newaxis]
+    y_true = K.cast(y_true, tf.int64)
+    rst = K.equal(y_pred, y_true)
+    return K.mean(rst)
+
+
+def voc_seg_acc_v2(y_true, y_pred):  # Note y_true and y_pred always have the same shape, and x and y are automatically converted to the same ndim
+    y_pred = K.reshape(y_pred, (-1, 21))
+    y_true = K.reshape(y_true, (-1, 1))
+
+    return keras.metrics.sparse_categorical_accuracy(y_true, y_pred)
+
+
+def voc_seg_loss(y_true, y_pred):
+    # shape = K.shape(y_true)
+
+    y_true = K.reshape(y_true, [-1, 1])
+    y_pred = K.reshape(y_pred, [-1, 21])
+
+    return K.sparse_categorical_crossentropy(y_true, y_pred)
+
+
+def voc_seg_loss_v2(y_true, y_pred):
+    y_true = K.one_hot(K.cast(K.reshape(y_true, (-1,)), tf.int32), 21)
+    y_pred = K.reshape(y_pred, [-1, 21])
+
+    rst = y_true * y_pred
+    rst = K.sum(rst, axis=-1)
+    return K.sum(K.log(rst))
+
+
 
 def voc_label_indices_for_tf(colormap, colormap2label):
     """Map a RGB color to a label."""
@@ -50,6 +78,20 @@ def voc_label_indices_for_tf(colormap, colormap2label):
     return tf.map_fn(fn, idx, back_prop=False)
 
 
+def preprocess_v4(name):
+    x = tf.strings.join([x_dir, name, '.jpg'])
+    y = tf.strings.join([y_dir, name, '.png'])
+
+    x = process_path(x)
+    y = process_path(y)
+
+    x = preprocess_img(x)
+    y = voc_label_indices_for_tf(y, tf.convert_to_tensor(build_colormap2label()))
+    y = tf.image.resize_with_crop_or_pad(y[..., np.newaxis], 512, 512)
+
+    return x, y
+
+
 def preprocess_v3(x, y):
     # x = example[0]
     # y = example[1]
@@ -59,7 +101,7 @@ def preprocess_v3(x, y):
 
     x = preprocess_img(x)
     y = voc_label_indices_for_tf(y, tf.convert_to_tensor(build_colormap2label()))
-    y = tf.reshape(tf.image.resize_with_crop_or_pad(y[..., np.newaxis], 512, 512), [512, 512])
+    y = tf.image.resize_with_crop_or_pad(y[..., np.newaxis], 512, 512)
 
     return x, y
 
@@ -110,38 +152,6 @@ def preprocess_img(img):
     img = tf.to_float(img)
     img = keras.applications.vgg16.preprocess_input(img)
     return tf.image.resize_with_crop_or_pad(img, 512, 512)
-
-
-def fcn_8s(input_shape=None, output_classes=21):
-    inputs = keras.Input(shape=input_shape)
-    layers = dict()
-    for layer in vgg16.layers:
-        if 'conv' in layer.name:
-            layers[layer.name] = keras.layers.Conv2D.from_config(layer)
-        elif 'pool' in layer.name:
-            layers[layer.name] = keras.layers.MaxPool2D.from_config(layer)
-
-    x = layers['block1_conv1'](inputs)
-    x = layers['block1_conv2'](x)
-    x = layers['block1_pool'](x)
-    x = layers['block2_conv1'](x)
-    x = layers['block2_conv2'](x)
-    x = layers['block2_pool'](x)
-    x = layers['block3_conv1'](x)
-    x = layers['block3_conv2'](x)
-    x = layers['block3_conv3'](x)
-    block_pool3_output = layers['block3_pool'](x)
-
-    x = layers['block4_conv1'](block_pool3_output)
-    x = layers['block4_conv2'](x)
-    x = layers['block4_conv3'](x)
-    block_pool4_output = layers['block4_pool'](x)
-
-    x = layers['block5_conv1'](block_pool4_output)
-    x = layers['block5_conv2'](x)
-    x = layers['block5_conv3'](x)
-    block_pool5_output = layers['block5_pool'](x)
-    pass
 
 
 def fcn_8s_exp(input_shape=(None, None, 3), output_classes=21):
@@ -244,15 +254,14 @@ def fcn_8s_v3(input_shape=(None, None, 3), output_classes=21):
     fc2_score = Conv2D(output_classes, (1, 1), padding='same', name='fc2_score')(fc2)
     fc2_4x = UpSampling2D(size=(4, 4), interpolation='bilinear', trainable=False, name='fc2_4x')(fc2_score)
 
-    pool4_score = keras.layers.Conv2D(output_classes, (1, 1), padding='same', name='pool4_score')(block4_pool)
-    pool4_2x = keras.layers.UpSampling2D((2, 2), interpolation='bilinear', trainable=False,
-                                         name='pool4_2x')(pool4_score)
+    pool4_score = Conv2D(output_classes, (1, 1), padding='same', name='pool4_score')(block4_pool)
+    pool4_2x = UpSampling2D((2, 2), interpolation='bilinear', trainable=False, name='pool4_2x')(pool4_score)
 
-    pool3_score = keras.layers.Conv2D(output_classes, (1, 1), padding='same', name='poo3_score')(block3_pool)
+    pool3_score = Conv2D(output_classes, (1, 1), padding='same', name='poo3_score')(block3_pool)
 
     add = Add()([fc2_4x, pool4_2x, pool3_score])
-    add_8x = keras.layers.UpSampling2D((8, 8), interpolation='bilinear', trainable=False, name='add_8x')(add)
-    outputs = Activation('softmax')(add_8x)
+    add_8x = UpSampling2D((8, 8), interpolation='bilinear', trainable=False, name='add_8x')(add)
+    outputs = Activation('softmax', name='softmax')(add_8x)
 
     model = keras.Model(inputs=inputs, outputs=outputs)
 
@@ -270,21 +279,11 @@ def fcn_8s_v3(input_shape=(None, None, 3), output_classes=21):
             fc2_weights[0] = fc2_weights[0].reshape((1, 1, 4096, 4096))
             model.get_layer('fc2').set_weights(fc2_weights)
 
+    for layer in model.layers:
+        if 'conv' in layer.name and int(layer.name[5]) <= 3:
+            layer.trainable = False
+
     return model
-
-
-def preprocess():
-    img_generator = keras.preprocessing.image.ImageDataGenerator(fill_mode='constant', cval=0)
-    x_iter = img_generator.flow_from_directory('./fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/',
-                                               classes=['img'],
-                                               target_size=(512, 512), class_mode=None, interpolation='bilinear')
-    class_generator = keras.preprocessing.image.ImageDataGenerator(fill_mode='constant', cval=0)
-    y_iter = img_generator.flow_from_directory('./fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/',
-                                               classes=['SegmentationClass'], target_size=(512, 512), class_mode=None,
-                                               interpolation='bilinear')
-
-    x = next(iter(x_iter))
-    pass
 
 
 def preprocess_v2():
@@ -359,44 +358,97 @@ def get_data_v3():
                                            name + '.png'))
 
     data = tf.data.Dataset.from_tensor_slices((x_trainval_dir, y_trainval_dir))
+    data = data.shuffle(1000)
     data = data.map(preprocess_v3, num_parallel_calls=AUTOTUNE)
     # data = data.cache('/home/changjy/tf_cache')
     return data, len(x_trainval_dir)
 
 
-def test_model():
-    callbacks = [keras.callbacks.EarlyStopping(patience=30), keras.callbacks.TensorBoard()]
-    model = fcn_8s_v3()
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy',
-                  metrics=[voc_seg_metrics])
+def get_data_v4():
+    trainval_file_names = np.loadtxt(
+        './fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/ImageSets/Segmentation/trainval.txt', dtype=np.str)
 
-    # x, y = preprocess_v2()
-    # data = tf.data.Dataset.from_tensor_slices((x[:100], y[:100])).cache('/home/changjy/tf_cache')
-    data, n = get_data_v3()
-    train_data = data.take(int(0.7 * n))
-    val_data = data.skip(int(0.7 * n))
-    # i = 0
-    # for _ in data:
-    #     i += 1
-    # print(i)
-    # data = data.shuffle(100)
-    train_data = train_data.repeat(100).batch(1)
-    val_data = val_data.repeat(100).batch(1)
-    # data.prefetch(3)
-    # model.fit(tf.convert_to_tensor(data[0]), tf.convert_to_tensor(data[1]), batch_size=2, epochs=1000)
-    history = model.fit(train_data, epochs=100, steps_per_epoch=20, validation_data=val_data, callbacks=callbacks)
-    model.save('./models/first_model.h5')
+    data = tf.data.Dataset.from_tensor_slices(trainval_file_names).shuffle(1000)
+    data = data.map(preprocess_v4, AUTOTUNE)
+    return data, len(trainval_file_names)
+
+
+def get_data_v5(shuffle=True, split=0.2):
+    trainval_file_names = np.loadtxt(
+        './fcn.berkeleyvision.org/data/pascal/VOCdevkit/VOC2012/ImageSets/Segmentation/trainval.txt', dtype=np.str)
+    if split is False:
+        data = tf.data.Dataset.from_tensor_slices(trainval_file_names)
+        if shuffle is True:
+            data = data.shuffle(1000)
+        data = data.map(preprocess_v4, num_parallel_calls=AUTOTUNE)
+        return data, len(trainval_file_names)
+    else:
+        n = int(split * len(trainval_file_names))
+        if shuffle is False:
+            data = tf.data.Dataset.from_tensor_slices(trainval_file_names).map(preprocess_v4,
+                                                                               num_parallel_calls=AUTOTUNE)
+            train = data.take(n)
+            val = data.skip(n)
+
+            return train, val, len(trainval_file_names)
+        else:
+            data = tf.data.Dataset.from_tensor_slices(trainval_file_names).shuffle(1000).map(preprocess_v4, num_parallel_calls=AUTOTUNE)
+
+            val = data.take(n)
+            train = data.skip(n)
+
+            return train, val, len(trainval_file_names)
+
+
+def test_model_without_val():
+
+    data, n = get_data_v4()
+    data = data.batch(1).repeat(10).prefetch(AUTOTUNE)
+    callbacks = [keras.callbacks.TensorBoard('./logs/not_val')]
+    model = fcn_8s_v3()
+    # print(model.layers[2].get_config())
+    model.compile(optimizer=keras.optimizers.Adam(5e-7), loss='sparse_categorical_crossentropy',
+                  metrics=[voc_seg_acc])
+
+    history = model.fit(data, epochs=1000, steps_per_epoch=20, callbacks=callbacks)
+    model.save('./models/no_val/first_model_train2.h5')
+    # pred = model.predict(data.map(get_x, AUTOTUNE))
+    # pred = np.argmax(pred, axis=-1)
 
     pass
 
     # x = np.random.random((7, 512, 256, 3)).astype(np.float32)
 
 
-#
-# y = model(x)
-# print(x.shape)
-# print(y.shape)
+def test_model():
+    callbacks = [keras.callbacks.EarlyStopping(patience=30, restore_best_weights=True),
+                 keras.callbacks.TensorBoard('./logs/val')]
+    model = fcn_8s_v3()
+    model.compile(optimizer=keras.optimizers.Adam(5e-7), loss='sparse_categorical_crossentropy',
+                  metrics=[voc_seg_acc_v2])
+
+    data, n = get_data_v4()
+    train_data = data.take(n - 24).batch(1).repeat(100)
+    val_data = data.skip(n - 24).batch(1)
+
+    # train_data, val_data, n = get_data_v5()
+    # train_data = train_data.batch(1).repeat(100)
+    # val_data = val_data.batch(1)
+
+    history = model.fit(train_data, epochs=10000, steps_per_epoch=20, validation_data=val_data, callbacks=callbacks,
+                        validation_steps=10)
+    model.save('./models/val/first_model.h5')
+    pass
+
+
+def choose():
+    if sys.argv[0] == '--with_val':
+        test_model()
+    elif sys.argv[0] == '--no_val':
+        test_model()
+    else:
+        print('no valid param!')
 
 
 if __name__ == '__main__':
-    test_model()
+    test_model_without_val()

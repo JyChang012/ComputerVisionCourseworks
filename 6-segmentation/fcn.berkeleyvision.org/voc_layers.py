@@ -97,7 +97,7 @@ class VOCSegDataLayer(caffe.Layer):
         - subtract mean
         - transpose to channel x height x width order
         """
-        im = Image.open('{}/JPEGImages/{}.jpg'.format(self.voc_dir, idx))
+        im = Image.open('{}/img/{}.jpg'.format(self.voc_dir, idx))
         in_ = np.array(im, dtype=np.float32)
         in_ = in_[:,:,::-1]
         in_ -= self.mean
@@ -148,7 +148,7 @@ class SBDDSegDataLayer(caffe.Layer):
         """
         # config
         params = eval(self.param_str)
-        self.sbdd_dir = params['sbdd_dir']
+        self.sbdd_dir = params['sbdd_dir']  # TODO: 'sbdd_dir not found'
         self.split = params['split']
         self.mean = np.array(params['mean'])
         self.random = params.get('randomize', True)
@@ -220,13 +220,23 @@ class SBDDSegDataLayer(caffe.Layer):
         return in_
 
 
+    # def load_label(self, idx):
+    #     """
+    #     Load label image as 1 x height x width integer array of label indices.
+    #     The leading singleton dimension is required by the loss.
+    #     """
+    #     import scipy.io
+    #     mat = scipy.io.loadmat('{}/cls/{}.mat'.format(self.sbdd_dir, idx))
+    #     label = mat['GTcls'][0]['Segmentation'][0].astype(np.uint8)
+    #     label = label[np.newaxis, ...]
+    #     return label
+
     def load_label(self, idx):
         """
         Load label image as 1 x height x width integer array of label indices.
         The leading singleton dimension is required by the loss.
         """
-        import scipy.io
-        mat = scipy.io.loadmat('{}/cls/{}.mat'.format(self.sbdd_dir, idx))
-        label = mat['GTcls'][0]['Segmentation'][0].astype(np.uint8)
+        im = Image.open('{}/SegmentationClass/{}.png'.format(self.sbdd_dir, idx))
+        label = np.array(im, dtype=np.uint8)
         label = label[np.newaxis, ...]
         return label

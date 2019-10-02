@@ -17,8 +17,10 @@ except:
 weights = '../voc-fcn16s/voc-fcn16s.caffemodel'
 
 # init
-caffe.set_device(int(sys.argv[1]))
+# caffe.set_device(int(sys.argv[1]))
+caffe.set_device(2)
 caffe.set_mode_gpu()
+
 
 solver = caffe.SGDSolver('solver.prototxt')
 solver.net.copy_from(weights)
@@ -28,7 +30,7 @@ interp_layers = [k for k in solver.net.params.keys() if 'up' in k]
 surgery.interp(solver.net, interp_layers)
 
 # scoring
-val = np.loadtxt('../data/segvalid11.txt', dtype=str)
+val = np.loadtxt('../data/pascal/segvalid11.txt', dtype=str)
 
 for _ in range(25):
     solver.step(4000)

@@ -19,7 +19,7 @@ def make_palette(num_classes):
         palette: the colormap as a k x 3 array of RGB colors
     """
     palette = np.zeros((num_classes, 3), dtype=np.uint8)
-    for k in xrange(0, num_classes):
+    for k in range(0, num_classes):
         label = k
         i = 0
         while label:
@@ -37,7 +37,7 @@ for kind in ('cls', 'inst'):
     ids = [os.path.basename(p)[:-4] for p in paths]
     for i, idx in enumerate(ids):
         if i % 100 == 0:
-            print "Converting {}th annotation...".format(i)
+            print("Converting {}th annotation...".format(i))
         # loading the label
         mat = scipy.io.loadmat('{}/{}/{}.mat'.format(dataset_dir, kind, idx))
         label_arr = mat['GT{}'.format(kind)][0]['Segmentation'][0].astype(np.uint8)
