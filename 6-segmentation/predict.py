@@ -2,9 +2,10 @@ import tensorflow as tf
 import numpy as np
 from main import get_data_v4
 from vis import build_colormap2label
+import matplotlib.pyplot as plt
 
 keras = tf.keras
-# tf.enable_eager_execution()
+tf.enable_eager_execution()
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
@@ -16,9 +17,9 @@ def get_y(x, y):
     return y
 
 
-def test_model(img_n=4):
+def test_model(img_n=50):
     # color2label =
-    model = keras.models.load_model('./models/no_val/first_model.h5', compile=False)
+    model = keras.models.load_model('./models/val/first_model.h5', compile=False)
 
     data, n = get_data_v4()
     data = data.take(img_n)
