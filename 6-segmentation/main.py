@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
-
+import argparse
 from get_data import get_data, get_data_random_crop
 from transform import voc_label_indices, build_colormap2label, batch_label_indices
 import sys
@@ -78,14 +78,17 @@ def test_model():
     pass
 
 
-def selector():
-    if sys.argv[1] == '--with_val':
-        test_model()
-    elif sys.argv[1] == '--no_val':
-        test_model_without_val()
-    else:
-        print('no valid param!')
-
-
 if __name__ == '__main__':
     test_model_random_crop()
+    parser = argparse.ArgumentParser(description='test fcn_8s')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--random_crop', '-c', action='store_true', help='with random crop')
+    group.add_argument('--with_val', '-v', action='store_true', help='with validation')
+    args = parser.parse_args()
+
+    if args.random_crop:
+        test_model_random_crop()
+    elif args.with_val:
+        test_model()
+    else:
+        test_model_without_val()
