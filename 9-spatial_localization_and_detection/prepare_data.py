@@ -1,94 +1,86 @@
 import tensorflow as tf
 import numpy as np
-import cv2 as cv
-import matplotlib.pyplot as plt
+import pandas as pd
 import os
 import utils
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# tf.enable_eager_execution()
 
 keras = tf.keras
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
-# Get classes list
 classes = ['bird', 'car', 'dog', 'lizard', 'turtle']
-idices = tf.convert_to_tensor([i for i in range(5)])
-classes2idx = tf.lookup.StaticHashTable(tf.lookup.KeyValueTensorInitializer(classes, idices, key_dtype=tf.string,
-                                                                            value_dtype=tf.int32), default_value=-1,
-                                        name='idx_lookup')
 
 
-# Get coordinates
-# coordinates = np.array([np.loadtxt(f'./tiny_vid/{c}_gt.txt', dtype=np.int)[:, 1:] for c in classes])
-
-
-classes2cor = []
-for c in classes:
-    cor = np.loadtxt(f'./tiny_vid/{c}_gt.txt', dtype=np.int)
-    cor = cor[:180, 1:]
-    cor = np.hstack((np.mean(cor[:, (0, 2)], axis=1, dtype=np.int, keepdims=True),
-                     np.mean(cor[:, (1, 3)], axis=1, dtype=np.int, keepdims=True),
-                     (cor[:, 2] - cor[:, 0]).reshape(-1, 1),
-                     (cor[:, 3] - cor[:, 1]).reshape(-1, 1)))
-    classes2cor.append(tf.convert_to_tensor(cor))
-
-# classes2cor = np.array(classes2cor)
-# classes2cor = tf.convert_to_tensor(classes2cor)
-
-classes2cor = tf.lookup.StaticHashTable(tf.lookup.KeyValueTensorInitializer(
-    keys=classes, values=classes2cor, key_dtype=tf.string, value_dtype=tf.int64
-), name='find_cor', default_value=False)
-
-pass
-
-
-# draw the first img
-def draw_rectangle(bounding):  # bounding = [xmin, ymin, xmax, ymax]
-    x = [bounding[0], bounding[0], bounding[2], bounding[2]]
-    y = [bounding[1], bounding[3], bounding[3], bounding[1]]
-    plt.plot(x, y)
-
-
-def test_data():
-    img = cv.imread('./tiny_vid/bird/000001.JPEG')
-    bird_annote = np.loadtxt('./tiny_vid/bird_gt.txt', dtype=np.int)
-    # each line is (image_index, xmin, ymin, xmax, ymax), where x is horizontal coordinate and y is vertical with origin
-    # at upper left
-    plt.imshow(img)
-    draw_rectangle(bird_annote[0, 1:])
-    plt.show()
-
-
-# preprocess data
-def process_path(path):
+def data_map(path, x, y, w, h, label):
+    # path, x, y, w, h, label = row
     img = tf.io.read_file(path)
     img = tf.image.decode_jpeg(img, channels=3)
-    return img
 
-
-def process_img(img):
     img = tf.cast(img, dtype=tf.float32)
     img = keras.applications.vgg16.preprocess_input(img)
-    return img
+
+    coordinate = tf.cast(tf.convert_to_tensor([x, y, w, h]), tf.float32)
+    label = tf.cast(label, tf.int64)
+
+    return img, coordinate, label
 
 
-def preprocess(file_path):
-    parts = tf.strings.split([file_path], '/', result_type='RaggedTensor')
-    label = parts[-2]
-    name = tf.cast(parts[-1][:-5], tf.int32) - 1
-    img = process_path(file_path)
-    img = process_img(img)
-    return img, classes2idx[label], classes2cor.lookup(label)[name]
+def split_data(data, n, split=0.8, batch=32):
+    train_data = data.take(int(split * n))
+    val_data = data.skip(int(split * n))
+
+    if batch:
+        train_data = train_data.batch(batch)
+        val_data = val_data.batch(batch)
+
+    return train_data, val_data
+
+
+classes2cor = dict()
+
+for c in classes:
+    cor = np.loadtxt(f'./tiny_vid/{c}_gt.txt', dtype=np.int)
+    cor = cor[:180, 1:].astype(np.float32)
+    cor = utils.bounding_xywh_transform(cor, b2xywh=True, batch=True)
+    classes2cor[c] = cor
 
 
 def get_data():
-    data = tf.data.Dataset.list_files('*.JPEG')
-    data = data.map(preprocess, num_parallel_calls=AUTOTUNE)
-    data_cls = data.map(lambda img, idx, cor: (img, idx), num_parallel_calls=AUTOTUNE)
-    data_cor = data.map(lambda img, idx, cor: (img, cor), num_parallel_calls=AUTOTUNE)
-    pass
+    class2idx = {cls: i for i, cls in enumerate(classes)}
+
+    paths = []
+    xs = []
+    ys = []
+    ws = []
+    hs = []
+    labels = []
+    for ci, c in enumerate(classes):
+        for name in range(180):
+            paths.append(f'./tiny_vid/{c}/{name+1:0>6}.JPEG'.encode('utf-8'))
+            xs.append(classes2cor[c][name, 0])
+            ys.append(classes2cor[c][name, 1])
+            ws.append(classes2cor[c][name, 2])
+            hs.append(classes2cor[c][name, 3])
+            labels.append(ci)
+
+    paths = np.array(paths)
+
+    # records = pd.DataFrame(dict(path=paths, x=xs, y=ys, w=ws, h=hs, label=labels))
+    # records.to_csv('./records.csv', sep=' ', index=False, header=False)
+    data = tf.data.Dataset.from_tensor_slices((paths, xs, ys, ws, hs, labels))
+    data = data.shuffle(1000)
+    # string should be converted as binary (encoded with utf-8)
+    # data = tf.data.TextLineDataset('./records.csv')
+    # data = tf.data.experimental.make_csv_dataset('./records.csv', batch_size=1)
+    data = data.map(data_map, num_parallel_calls=AUTOTUNE)
+
+    data_classify = data.map(lambda img, cor, label: (img, label), num_parallel_calls=AUTOTUNE)
+    data_regress = data.map(lambda img, cor, label: (img, cor), num_parallel_calls=AUTOTUNE)
+
+    return data_classify, data_regress, len(xs)
 
 
 if __name__ == '__main__':
     get_data()
-    pass

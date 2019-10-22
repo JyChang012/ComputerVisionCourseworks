@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import os
-import prepare_data_v2
+import prepare_data
 import models
 import cv2 as cv
 import matplotlib.pyplot as plt
@@ -11,12 +11,6 @@ bounding2xywh = np.array([[.5, 0, .5, 0],
                           [0, .5, 0, .5],
                           [-1, 0, 1, 0],
                           [0, -1, 0, 1]])
-
-
-def test(paths):
-    imgs = np.array([plt.imread(path) for path in paths])
-
-
 
 
 def plot_box_from_xywh(xywh):
