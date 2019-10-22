@@ -156,7 +156,6 @@ def train2():
     for i, img, label, cor in zip(range(1, imgs.shape[0] + 1), imgs, rsts[0], rsts[1]):
         plt.subplot(3, 2, i)
         plt.imshow(img)
-        # utils.plot_box_from_xywh(cor)
         utils.plot_box_from_xywh(cor)
         # utils.plot_box_from_xywh(class2cor[prepare_data_v2.classes[label]][i-1])
         label = np.argmax(label)
