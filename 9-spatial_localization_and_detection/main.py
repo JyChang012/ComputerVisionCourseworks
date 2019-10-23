@@ -16,6 +16,7 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
 def train():
+    """Classify first, propose second."""
     log_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
     os.mkdir(f'./clf/logs/{log_name}')
     os.mkdir(f'./regress/logs/{log_name}')
@@ -90,6 +91,7 @@ def train():
 
 
 def train2():
+    """Propose first, classify second."""
     log_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
     os.mkdir(f'./clf/logs/{log_name}')
     os.mkdir(f'./regress/logs/{log_name}')
@@ -103,7 +105,6 @@ def train2():
     callbacks_regress = [
         keras.callbacks.TensorBoard(f'./regress/logs/{log_name}'),
         keras.callbacks.EarlyStopping(patience=30, restore_best_weights=True)]
-
 
     model_regress = keras.Model(inputs=model.inputs, outputs=model.outputs[1])
     model_regress.compile(optimizer=keras.optimizers.Adam(5e-7),  # too large
