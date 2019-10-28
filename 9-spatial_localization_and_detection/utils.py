@@ -1,11 +1,6 @@
-import tensorflow as tf
-import numpy as np
-import pandas as pd
-import os
-import prepare_data
-import models
-import cv2 as cv
 import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
 
 bounding2xywh = np.array([[.5, 0, .5, 0],
                           [0, .5, 0, .5],
@@ -15,10 +10,10 @@ bounding2xywh = np.array([[.5, 0, .5, 0],
 
 def plot_box_from_xywh(xywh):
     bounding = bounding_xywh_transform(xywh, b2xywh=False)
-    draw_rectangle(bounding)
+    plot_box_from_min_max(bounding)
 
 
-def draw_rectangle(bounding):  # bounding = [xmin, ymin, xmax, ymax]
+def plot_box_from_min_max(bounding):  # bounding = [xmin, ymin, xmax, ymax]
     x = [bounding[0], bounding[0], bounding[2], bounding[2], bounding[0]]
     y = [bounding[1], bounding[3], bounding[3], bounding[1], bounding[1]]
     plt.plot(x, y)

@@ -22,7 +22,7 @@ numWords = 1000
 image_paths = []
 for training_name in training_names:
     image_path = os.path.join(train_path, training_name)
-    image_paths += [image_path]
+    image_paths.append(image_path)
 
 # Create feature extraction and keypoint detector objects
 sift = cv2.xfeatures2d.SIFT_create()

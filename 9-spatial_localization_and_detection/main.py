@@ -1,11 +1,13 @@
-import tensorflow as tf
-import numpy as np
-import os
-import prepare_data
-import models
-import matplotlib.pyplot as plt
-import utils
 import datetime
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+
+import models
+import prepare_data
+import utils
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
@@ -16,7 +18,7 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
 def train():
-    """Classify first, propose second."""
+    """Classify first, then propose."""
     log_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
     os.mkdir(f'./clf/logs/{log_name}')
     os.mkdir(f'./regress/logs/{log_name}')
@@ -80,7 +82,7 @@ def train():
         plt.subplot(3, 2, i)
         plt.imshow(img)
         # utils.plot_box_from_xywh(cor)
-        utils.draw_rectangle(cor)
+        utils.plot_box_from_min_max(cor)
         label = np.argmax(label)
         plt.xticks([]), plt.yticks([])
         plt.title(prepare_data.classes[label])
@@ -91,13 +93,14 @@ def train():
 
 
 def train2():
-    """Propose first, classify second."""
+    """Propose first, then classify."""
     log_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
     os.mkdir(f'./clf/logs/{log_name}')
     os.mkdir(f'./regress/logs/{log_name}')
 
     data_classify, data_regress, n = prepare_data.get_data()
-    model = models.bbox_regressor((128, 128, 3), logits_output=False, transfer=True)
+    # model = models.bbox_regressor((128, 128, 3), logits_output=False, transfer=True)
+    model = models.bbox_regressor_v2((128, 128, 3), logits_output=False)
 
     callbacks_clf = [
         keras.callbacks.TensorBoard(f'./clf/logs/{log_name}'),
@@ -158,12 +161,12 @@ def train2():
         utils.plot_box_from_xywh(cor)
         # utils.plot_box_from_xywh(class2cor[prepare_data_v2.classes[label]][i-1])
         label = np.argmax(label)
-        plt.xticks([]), plt.yticks([])
+        plt.axis('off')
         plt.title(prepare_data.classes[label])
 
-    model.save(f'./model_{log_name}.h5')
+    model.save(f'./saved_models/model_{log_name}.h5')
 
-    plt.savefig(f'full_{log_name}.jpg')
+    plt.savefig(f'./demo_pics/full_{log_name}.jpg')
     plt.show()
     pass
 

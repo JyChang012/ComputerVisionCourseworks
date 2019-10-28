@@ -1,7 +1,8 @@
-import tensorflow as tf
-import numpy as np
-import pandas as pd
 import os
+
+import numpy as np
+import tensorflow as tf
+
 import utils
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -27,13 +28,13 @@ def data_map(path, x, y, w, h, label):
     return img, coordinate, label
 
 
-def split_data(data, n, split=0.8, batch=32):
+def split_data(data, n, split=0.8, batch_size=32):
     train_data = data.take(int(split * n))
     val_data = data.skip(int(split * n))
 
-    if batch:
-        train_data = train_data.batch(batch)
-        val_data = val_data.batch(batch)
+    if batch_size:
+        train_data = train_data.batch(batch_size)
+        val_data = val_data.batch(batch_size)
 
     return train_data, val_data
 
@@ -67,13 +68,9 @@ def get_data():
 
     paths = np.array(paths)
 
-    # records = pd.DataFrame(dict(path=paths, x=xs, y=ys, w=ws, h=hs, label=labels))
-    # records.to_csv('./records.csv', sep=' ', index=False, header=False)
     data = tf.data.Dataset.from_tensor_slices((paths, xs, ys, ws, hs, labels))
     data = data.shuffle(1000)
     # string should be converted as binary (encoded with utf-8)
-    # data = tf.data.TextLineDataset('./records.csv')
-    # data = tf.data.experimental.make_csv_dataset('./records.csv', batch_size=1)
     data = data.map(data_map, num_parallel_calls=AUTOTUNE)
 
     data_classify = data.map(lambda img, cor, label: (img, label), num_parallel_calls=AUTOTUNE)

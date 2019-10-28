@@ -1,7 +1,7 @@
-import tensorflow as tf
-import numpy as np
-from tensorflow.keras.layers import Dense, Conv2D, MaxPool2D, Flatten, Softmax
 import os
+
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, Conv2D, MaxPool2D, Flatten, GlobalAveragePooling2D
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '/device:GPU:2'
 
@@ -45,7 +45,7 @@ def bbox_regressor(input_shape=(None, None, 3), output_class=5, logits_output=Fa
     flatten_feature = Flatten()(block5_pool)
 
     # Classification head
-    gap = keras.layers.GlobalAveragePooling2D()(block5_pool)
+    gap = GlobalAveragePooling2D()(block5_pool)
     clf_fc1 = Dense(512, activation='relu', name='clf_fc1')(gap)
     clf_fc2 = Dense(512, activation='relu', name='clf_fc2')(clf_fc1)
     clf_fc3 = Dense(256, activation='relu', name='clf_fc3')(clf_fc2)
@@ -83,6 +83,56 @@ def bbox_regressor(input_shape=(None, None, 3), output_class=5, logits_output=Fa
             name = layer.name
             if 'block' in name:
                 model.get_layer(name).set_weights(layer.get_weights())
+
+    if freeze_conv:
+        for layer in model.layers:
+            name = layer.name
+            if 'block' in name:
+                layer.trainable = False
+
+    return model
+
+
+def bbox_regressor_v2(input_shape=(None, None, 3), output_class=5, logits_output=False, freeze_conv=False):
+    # input shape is (128, 128, 3)
+    """A simpler implementation of bbox regressor."""
+    vgg16 = keras.applications.vgg16.VGG16(include_top=False, input_shape=input_shape)
+    flatten_feature = Flatten()(vgg16.outputs[0])
+
+    # Classification head
+    gap = GlobalAveragePooling2D()(vgg16.outputs[0])
+    clf_fc1 = Dense(512, activation='relu', name='clf_fc1')(gap)
+    clf_fc2 = Dense(512, activation='relu', name='clf_fc2')(clf_fc1)
+    clf_fc3 = Dense(256, activation='relu', name='clf_fc3')(clf_fc2)
+    clf_fc4 = Dense(256, activation='relu', name='clf_fc4')(clf_fc3)
+    # clf_fc5 = Dense(256, activation='relu', name='clf_fc5')(clf_fc4)
+    # clf_fc6 = Dense(128, activation='relu', name='clf_fc6')(clf_fc5)
+    # clf_fc7 = Dense(128, activation='relu', name='clf_fc7')(clf_fc6)
+    # clf_fc8 = Dense(128, activation='relu', name='clf_fc8')(clf_fc7)
+
+    if logits_output:
+        clf_output = Dense(output_class, name='clf_output')(clf_fc4)
+    else:
+        clf_output = Dense(output_class, activation='softmax', name='clf_output')(clf_fc4)
+
+    # Box coordinates head
+    box_fc1 = Dense(512, activation='relu', name='box_fc1')(flatten_feature)
+    box_fc2 = Dense(512, activation='relu', name='box_fc2')(box_fc1)
+    box_fc3 = Dense(256, activation='relu', name='box_fc3')(box_fc2)
+    box_fc4 = Dense(128, activation='relu', name='box_fc4')(box_fc3)
+    # box_fc5 = Dense(128, activation='relu', name='box_fc5')(box_fc4)
+    # box_fc6 = Dense(256, activation='relu', name='box_fc6')(box_fc5)
+    # box_fc7 = Dense(128, activation='relu', name='box_fc7')(box_fc6)
+    # box_fc8 = Dense(128, activation='relu', name='box_fc8')(box_fc7)
+
+    box_output = Dense(4,
+                       # activation='relu',
+                       name='box_output')(box_fc4)  # output (x, y, w, h)
+    # TODO: other activations to restrict output?
+
+    model = keras.Model(inputs=vgg16.inputs[0], outputs=[clf_output, box_output])
+
+    # transfer weights (for only conv kernel)
 
     if freeze_conv:
         for layer in model.layers:
