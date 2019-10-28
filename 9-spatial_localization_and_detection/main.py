@@ -31,7 +31,7 @@ def train():
                          keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)]
 
     data_classify, data_regress, n = prepare_data.get_data()
-    model = models.bbox_regressor((128, 128, 3), logits_output=False, transfer=True)
+    model = models.bbox_regressor((128, 128, 3), logits_output=False)
 
     model_clf = keras.Model(inputs=model.inputs, outputs=model.outputs[0])
     model_clf.compile(optimizer=keras.optimizers.Adam(3e-6),  # 1e-5
@@ -100,7 +100,7 @@ def train2():
 
     data_classify, data_regress, n = prepare_data.get_data()
     # model = models.bbox_regressor((128, 128, 3), logits_output=False, transfer=True)
-    model = models.bbox_regressor_v2((128, 128, 3), logits_output=False)
+    model = models.bbox_regressor((128, 128, 3), logits_output=False)
 
     callbacks_clf = [
         keras.callbacks.TensorBoard(f'./clf/logs/{log_name}'),
