@@ -1,9 +1,8 @@
 import argparse as ap
-import os
-
 import cv2
 import joblib
 import numpy as np
+import os
 from scipy.cluster.vq import *
 from sklearn import preprocessing
 
@@ -33,7 +32,7 @@ des_list = []
 for i, image_path in enumerate(image_paths):
     im = cv2.imread(image_path)
     print(f"Extract SIFT of {training_names[i]} image, {i} of {len(image_paths)} images")
-    kpts, des = sift.detectAndCompute(im, None)
+    kpts, des = sift.detectAndCompute(im, None)  # des: all candidate keypoints in the image
     # rootsift
     # rs = RootSIFT()
     # des = rs.compute(kpts, des)
@@ -46,16 +45,16 @@ for i, image_path in enumerate(image_paths):
 #     descriptors = np.vstack((descriptors, descriptor[::downsampling,:]))
 
 # Stack all the descriptors vertically in a numpy array
-descriptors = des_list[0][1]
+descriptors = des_list[0][1]  # descriptors: all candidate keypoints
 for image_path, descriptor in des_list[1:]:
     descriptors = np.vstack((descriptors, descriptor))
 
 # Perform k-means clustering
 print(f"Start k-means: {numWords} words, {descriptors.shape[0]} key points")
-voc, variance = kmeans(descriptors, numWords, 1)
+voc, variance = kmeans(descriptors, numWords, 1)  # voc: all 1000 keypoints (1000, 182)
 
 # Calculate the histogram of features
-im_features = np.zeros((len(image_paths), numWords), "float32")
+im_features = np.zeros((len(image_paths), numWords), "float32")  # each row is the hist of a image
 for i in range(len(image_paths)):
     words, distance = vq(des_list[i][1], voc)
     for w in words:
